@@ -1,0 +1,374 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+	"namespace": {
+	    "defaultValue": "yottaci",
+	    "type": "String"
+	},
+	"functionapp_plan_name": {
+	    "defaultValue": "NorthEuropePlan",
+	    "type": "String"
+	},
+	"webhooks_functionapp_name": {
+	    "defaultValue": "yottaciwebhooks",
+	    "type": "String"
+	},
+	"backend_functionapp_name": {
+	    "defaultValue": "yottacibackend",
+	    "type": "String"
+	},
+	"backend_staging_slot_name": {
+	    "defaultValue": "staging",
+	    "type": "String"
+	}
+    },
+    "variables": {
+	"functions_storage_account_name": "[concat(parameters('namespace'), 'functions')]",
+	"production_storage_account_name": "[concat(parameters('namespace'), 'production')]",
+	"staging_storage_account_name": "[concat(parameters('namespace'), 'staging')]",
+	"webhooks_staging_functionapp_name": "[concat(parameters('webhooks_functionapp_name'), 'staging')]"
+    },
+    "resources": [
+        {
+            "comments": "Storage account for functions",
+            "type": "Microsoft.Storage/storageAccounts",
+            "sku": {
+                "name": "Standard_LRS"
+            },
+            "kind": "Storage",
+            "name": "[variables('functions_storage_account_name')]",
+            "apiVersion": "2017-06-01",
+            "location": "[resourceGroup().location]",
+            "tags": {},
+            "properties": {},
+            "dependsOn": []
+        },
+        {
+            "comments": "Storage account for production queue and customer data",
+            "type": "Microsoft.Storage/storageAccounts",
+            "sku": {
+                "name": "Standard_LRS"
+            },
+            "kind": "Storage",
+            "name": "[variables('production_storage_account_name')]",
+            "apiVersion": "2017-06-01",
+            "location": "[resourceGroup().location]",
+            "tags": {},
+            "properties": {},
+            "dependsOn": []
+        },
+        {
+            "comments": "Storage account for staging queue and customer data",
+            "type": "Microsoft.Storage/storageAccounts",
+            "sku": {
+                "name": "Standard_LRS"
+            },
+            "kind": "Storage",
+            "name": "[variables('staging_storage_account_name')]",
+            "apiVersion": "2017-06-01",
+            "location": "[resourceGroup().location]",
+            "tags": {},
+            "properties": {},
+            "dependsOn": []
+        },
+        {
+            "comments": "North Europe Consumption plan for functions",
+            "type": "Microsoft.Web/serverfarms",
+            "sku": {
+                "name": "Y1",
+                "tier": "Dynamic",
+                "size": "Y1",
+                "family": "Y",
+                "capacity": 0
+            },
+            "kind": "functionapp",
+            "name": "[parameters('functionapp_plan_name')]",
+            "apiVersion": "2016-09-01",
+            "location": "[resourceGroup().location]",
+            "scale": null,
+            "properties": {
+                "name": "[parameters('functionapp_plan_name')]",
+                "workerTierName": null,
+                "adminSiteName": null,
+                "hostingEnvironmentProfile": null,
+                "perSiteScaling": false,
+                "reserved": false,
+                "targetWorkerCount": 0,
+                "targetWorkerSizeId": 0
+            },
+            "dependsOn": []
+        },
+        {
+            "comments": "Frontend webhooks",
+            "type": "Microsoft.Web/sites",
+            "kind": "functionapp",
+            "name": "[parameters('webhooks_functionapp_name')]",
+            "apiVersion": "2016-08-01",
+            "location": "[resourceGroup().location]",
+            "scale": null,
+            "properties": {
+                "enabled": true,
+                "hostNameSslStates": [
+                    {
+                        "name": "[concat(parameters('webhooks_functionapp_name'),'.azurewebsites.net')]",
+                        "sslState": "Disabled",
+                        "virtualIP": null,
+                        "thumbprint": null,
+                        "toUpdate": null,
+                        "hostType": "Standard"
+                    },
+                    {
+                        "name": "[concat(parameters('webhooks_functionapp_name'),'.scm.azurewebsites.net')]",
+                        "sslState": "Disabled",
+                        "virtualIP": null,
+                        "thumbprint": null,
+                        "toUpdate": null,
+                        "hostType": "Repository"
+                    }
+                ],
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('functionapp_plan_name'))]",
+                "reserved": false,
+                "siteConfig": null,
+                "scmSiteAlsoStopped": false,
+                "hostingEnvironmentProfile": null,
+                "clientAffinityEnabled": true,
+                "clientCertEnabled": false,
+                "hostNamesDisabled": false,
+                "dailyMemoryTimeQuota": 0,
+                "cloningInfo": null
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', parameters('functionapp_plan_name'))]",
+		"[resourceId('Microsoft.Storage/storageAccounts', variables('functions_storage_account_name'))]"
+            ],
+	    "resources": [
+		{
+		    "name": "appsettings",
+		    "type": "config",
+		    "location": "[resourceGroup().location]",
+		    "apiVersion": "2016-08-01",
+		    "dependsOn": [
+			"[resourceId('Microsoft.Web/sites', parameters('webhooks_functionapp_name'))]"
+		    ],
+		    "properties": {
+			"AzureWebJobsStorage": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('functions_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('functions_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]",
+			"AzureWebJobsDashboard": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('functions_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('functions_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]",
+			"FUNCTIONS_EXTENSION_VERSION": "~1",
+			"WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('functions_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('functions_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]",
+			"WEBSITE_CONTENTSHARE": "[parameters('webhooks_functionapp_name')]",
+			"AzureWebJobsSecretStorageType": "Blob",
+			"YottaCIDataStorage": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('production_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('production_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]"
+		    }
+		}
+	    ]
+        },
+        {
+            "comments": "Staging frontend webhooks",
+            "type": "Microsoft.Web/sites",
+            "kind": "functionapp",
+            "name": "[variables('webhooks_staging_functionapp_name')]",
+            "apiVersion": "2016-08-01",
+            "location": "[resourceGroup().location]",
+            "scale": null,
+            "properties": {
+                "enabled": true,
+                "hostNameSslStates": [
+                    {
+                        "name": "[concat(variables('webhooks_staging_functionapp_name'),'.azurewebsites.net')]",
+                        "sslState": "Disabled",
+                        "virtualIP": null,
+                        "thumbprint": null,
+                        "toUpdate": null,
+                        "hostType": "Standard"
+                    },
+                    {
+                        "name": "[concat(variables('webhooks_staging_functionapp_name'),'.scm.azurewebsites.net')]",
+                        "sslState": "Disabled",
+                        "virtualIP": null,
+                        "thumbprint": null,
+                        "toUpdate": null,
+                        "hostType": "Repository"
+                    }
+                ],
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('functionapp_plan_name'))]",
+                "reserved": false,
+                "siteConfig": null,
+                "scmSiteAlsoStopped": false,
+                "hostingEnvironmentProfile": null,
+                "clientAffinityEnabled": true,
+                "clientCertEnabled": false,
+                "hostNamesDisabled": false,
+                "dailyMemoryTimeQuota": 0,
+                "cloningInfo": null
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', parameters('functionapp_plan_name'))]",
+		"[resourceId('Microsoft.Storage/storageAccounts', variables('functions_storage_account_name'))]"
+            ],
+	    "resources": [
+		{
+		    "name": "appsettings",
+		    "type": "config",
+		    "location": "[resourceGroup().location]",
+		    "apiVersion": "2016-08-01",
+		    "dependsOn": [
+			"[resourceId('Microsoft.Web/sites', variables('webhooks_staging_functionapp_name'))]"
+		    ],
+		    "properties": {
+			"AzureWebJobsStorage": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('functions_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('functions_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]",
+			"AzureWebJobsDashboard": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('functions_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('functions_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]",
+			"FUNCTIONS_EXTENSION_VERSION": "~1",
+			"WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('functions_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('functions_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]",
+			"WEBSITE_CONTENTSHARE": "[variables('webhooks_staging_functionapp_name')]",
+			"AzureWebJobsSecretStorageType": "Blob",
+			"YottaCIDataStorage": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('staging_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('staging_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]"
+		    }
+		}
+	    ]
+        },
+        {
+            "comments": "Backend functions",
+            "type": "Microsoft.Web/sites",
+            "kind": "functionapp",
+            "name": "[parameters('backend_functionapp_name')]",
+            "apiVersion": "2016-08-01",
+            "location": "[resourceGroup().location]",
+            "scale": null,
+            "properties": {
+                "enabled": true,
+                "hostNameSslStates": [
+                    {
+                        "name": "[concat(parameters('backend_functionapp_name'),'.azurewebsites.net')]",
+                        "sslState": "Disabled",
+                        "virtualIP": null,
+                        "thumbprint": null,
+                        "toUpdate": null,
+                        "hostType": "Standard"
+                    },
+                    {
+                        "name": "[concat(parameters('backend_functionapp_name'),'.scm.azurewebsites.net')]",
+                        "sslState": "Disabled",
+                        "virtualIP": null,
+                        "thumbprint": null,
+                        "toUpdate": null,
+                        "hostType": "Repository"
+                    }
+                ],
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('functionapp_plan_name'))]",
+                "reserved": false,
+                "siteConfig": null,
+                "scmSiteAlsoStopped": false,
+                "hostingEnvironmentProfile": null,
+                "clientAffinityEnabled": true,
+                "clientCertEnabled": false,
+                "hostNamesDisabled": false,
+                "dailyMemoryTimeQuota": 0,
+                "cloningInfo": null
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', parameters('functionapp_plan_name'))]",
+		"[resourceId('Microsoft.Storage/storageAccounts', variables('functions_storage_account_name'))]",
+		"[resourceId('Microsoft.Storage/storageAccounts', variables('production_storage_account_name'))]"
+            ],
+	    "resources": [
+		{
+		    "name": "appsettings",
+		    "type": "config",
+		    "location": "[resourceGroup().location]",
+		    "apiVersion": "2016-08-01",
+		    "dependsOn": [
+			"[resourceId('Microsoft.Web/sites', parameters('backend_functionapp_name'))]"
+		    ],
+		    "properties": {
+			"AzureWebJobsStorage": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('functions_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('functions_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]",
+			"AzureWebJobsDashboard": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('functions_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('functions_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]",
+			"FUNCTIONS_EXTENSION_VERSION": "~1",
+			"WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('functions_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('functions_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]",
+			"WEBSITE_CONTENTSHARE": "[parameters('backend_functionapp_name')]",
+			"AzureWebJobsSecretStorageType": "Blob",
+			"YottaCIDataStorage": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('production_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('production_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]",
+                        "GithubIssuerID": "[parameters('githubapp_production_issuer_id')]",
+                        "GHPEM": "[parameters('githubapp_production_pem')]",
+                        "YottaCIClientID": "[parameters('client_id')]",
+                        "YottaCIClientSecret": "[parameters('client_secret')]",
+                        "YottaCITenantID": "[parameters('tenant_id')]",
+                        "YottaCISubscriptionID": "[parameters('subscription_id')]"
+		    }
+		},
+		{
+		    "name": "slotconfignames",
+		    "type": "config",
+		    "location": "[resourceGroup().location]",
+		    "apiVersion": "2016-08-01",
+		    "dependsOn": [
+			"[resourceId('Microsoft.Web/sites', parameters('backend_functionapp_name'))]"
+		    ],
+		    "properties": {
+			"appSettingNames": [
+			    "WEBSITE_CONTENTSHARE",
+			    "YottaCIDataStorage",
+                            "GithubIssuerID",
+                            "GHPEM"
+			]
+		    }
+		},
+		{
+		    "comments": "Staging slot for backend functions",
+		    "name": "[parameters('backend_staging_slot_name')]",
+		    "type": "slots",
+		    "kind": "functionapp",
+		    "location": "[resourceGroup().location]",
+		    "apiVersion": "2016-08-01",
+		    "properties": {
+			"enabled": true,
+			"serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('functionapp_plan_name'))]",
+			"reserved": false
+		    },
+		    "dependsOn": [
+			"[resourceId('Microsoft.Web/serverfarms', parameters('functionapp_plan_name'))]",
+			"[resourceId('Microsoft.Storage/storageAccounts', variables('functions_storage_account_name'))]",
+			"[resourceId('Microsoft.Storage/storageAccounts', variables('staging_storage_account_name'))]",
+			"[resourceId('Microsoft.Web/sites', parameters('backend_functionapp_name'))]"
+		    ],
+		    "resources": [
+			{
+			    "name": "appsettings",
+			    "type": "config",
+			    "location": "[resourceGroup().location]",
+			    "apiVersion": "2016-08-01",
+			    "dependsOn": [
+				"[resourceId('Microsoft.Web/sites/slots', parameters('backend_functionapp_name'), parameters('backend_staging_slot_name'))]"
+			    ],
+			    "properties": {
+				"AzureWebJobsStorage": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('functions_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('functions_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]",
+				"AzureWebJobsDashboard": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('functions_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('functions_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]",
+				"FUNCTIONS_EXTENSION_VERSION": "~1",
+				"WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('functions_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('functions_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]",
+				"WEBSITE_CONTENTSHARE": "[concat(parameters('backend_functionapp_name'), '-' , parameters('backend_staging_slot_name'))]",
+				"AzureWebJobsSecretStorageType": "Blob",
+				"YottaCIDataStorage": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('staging_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('staging_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]",
+                        "GithubIssuerID": "[parameters('githubapp_staging_issuer_id')]",
+                                "GHPEM": "[parameters('githubapp_staging_pem')]",
+                                "YottaCIClientID": "[parameters('client_id')]",
+                                "YottaCIClientSecret": "[parameters('client_secret')]",
+                                "YottaCITenantID": "[parameters('tenant_id')]",
+                                "YottaCISubscriptionID": "[parameters('subscription_id')]"
+			    }
+			}
+		    ]
+		}
+	    ]
+        }
+    ],
+    "outputs": {
+	"production_storage_connection_string": {
+	    "type": "String",
+	    "value": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('production_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('production_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]"
+	},
+	"staging_storage_connection_string": {
+	    "type": "String",
+	    "value": "[concat('DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=', variables('staging_storage_account_name'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('staging_storage_account_name')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]"
+	}
+    }
+}
